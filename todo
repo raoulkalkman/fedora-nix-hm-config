@@ -1,0 +1,62 @@
+[Docs]
+
+- Add instructions for installing determinate nix to README.md
+- Add instructions for installing homemanager on fedora44
+- Allow gpu passthrough
+
+[Shell]
+
+- fish + fisher + completions
+- starship
+- shortcuts
+- fonts
+
+[Dev]
+
+- Git
+- nix-githooks
+- nix-direnv
+- bear
+- cmake
+- gnumake
+- treefmt
+- Code
+- waterfox
+- wireguard
+- wezterm
+- linter
+
+[Formatters]
+
+- ruff
+- shformat
+
+[QA]
+
+- shellcheck
+- clangd
+
+[Compilers-runtime]
+
+- Clang
+- Cargo
+- Python3.14
+
+[Session-variables]
+
+- CC => Clang
+- CCX => Clang++
+
+[Config]
+
+- Git
+- kde
+- systemd
+- wg
+- wezterm
+
+[LLM-agents-local]
+
+- .agents/ folder
+- routing
+- harness
