@@ -1,0 +1,333 @@
+Steps taken on new device:
+On Fedora44-Gnome:
+
+< still todo:
+	- keepassxc	
+	
+> Snapshots setup
+	* configure snapper
+	* sudo nano /etc/snapper/configs/root
+	* NUMBER_LIMIT="5"
+	* NUMBER_LIMIT_IMPORTANT="3"
+	
+> Flatpak
+	* install waterfox
+		* set settings for waterfox, preferably from restore file
+		* sync with mozilla account
+		* settings: add cookie exceptions
+	* install zapzap
+	`flatpak override --user --filesystem=home com.rtosta.zapzap`
+	
+> dnf
+	* remove firefox
+	* install direnv
+	* install nvim
+	`sudo dnf install flatseal`
+	* install lm_sensors libgtop2-devel
+	* sudo dnf copr enable wezfurlong/wezterm-nightly
+	* sudo dnf install wezterm
+
+> compilers
+	* rustup
+	* go
+	- sudo dnf install rustup golang
+	
+> Determinate Nix (on btrfs)
+< todo: set filesystem label for nix partition
+< todo: fix the $(finxmnt -no SOURCE /) to automatically parse the proper source
+	> Setting the subvolume (so it does not get snapshotted)
+	* set up subvolume for `nix/`
+	* `findmnt -no UUID /`
+	* `findmnt -no SOURCE /` 
+	* sudo mount -o subvolid=5 $(findmnt -no SOURCE /) /mnt
+	* sudo btrfs subvolume create /mnt/nix
+	* sudo umount /mnt
+	* sudo mkdir -p /nix
+	> Mounting the subvolume automatically
+	* sudo nano /etc/fstab
+	* UUID=<YOUR-BTRFS-UUID>  /nix  btrfs  subvol=nix,noatime,compress=zstd:1,x-systemd.device-timeout=0,discard=async  0  0
+	* sudo systemctl daemon-reload
+	* sudo mount /nix
+	> Installing determinate nix (automatically fixes LinuxSE and flakes)
+	* curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
+
+> nix-direnv
+	* install direnv: `sudo dnf install direnv`
+	* install nix-direnv
+	* install nix-shell
+
+> wireguard
+	* install wg
+	* set systemd-networkd config or set networkmanager config (depending on GNOME or KDE)
+	* enable sshd
+		sudo dnf install -y openssh-server
+		sudo systemctl enable --now sshd
+	* allow wireguard through the firewall:
+		sudo firewall-cmd --permanent --zone=trusted --add-interface=wg0
+		sudo firewall-cmd --reload
+	* set firewall settings in NetworkManager
+		sudo nmcli connection modify "<connection-name>" connection.zone trusted
+		sudo nmcli connection up "<connection-name>"
+	* harden ssh:
+	sudo tee /etc/ssh/sshd_config.d/50-security.conf << 'EOF'
+# Disable root logins
+PermitRootLogin no
+
+# Require key-based authentication
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+
+# Restrict to specific users (replace 'your_username' with your Fedora username)
+AllowUsers your_username
+
+# Close unresponsive sessions
+ClientAliveInterval 300
+ClientAliveCountMax 2
+
+# Reduce attack surface
+MaxAuthTries 3
+X11Forwarding no
+EOF
+
+> btrfs
+	* set noatime in fstab
+	* run `lsblk -o NAME,MODEL,ROTA,DISC-GRAN,DISC-MAX,TRAN` to find if we are on SSD (ROTA = 0, DISC-GRAN > 0B)
+	* set discard=async (only on SSD) 
+	* sudo systemctl disable --now fstrim.timer
+	* sudo systemctl daemon-reload
+	* sudo tee /etc/systemd/system/btrfs-scrub@.service << 'EOF'
+[Unit]
+Description=Btrfs scrub on %f
+ConditionPathIsMountPoint=%f
+RequiresMountsFor=%f
+
+[Service]
+Type=simple
+Nice=19
+IOSchedulingClass=idle
+CPUSchedulingPolicy=idle
+KillSignal=SIGINT
+ExecStart=/usr/bin/btrfs scrub start -B %f
+EOF
+
+	* sudo tee /etc/systemd/system/btrfs-scrub@.timer << 'EOF'
+[Unit]
+Description=Monthly Btrfs scrub on %f
+ConditionPathIsMountPoint=%f
+
+[Timer]
+OnCalendar=monthly
+AccuracySec=1d
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+	* sudo systemctl daemon-reload
+	* sudo systemctl enable --now btrfs-scrub@-.timer
+
+> nvidia
+	* enable third-party repositories:
+	`sudo dnf install \
+  https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+  https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm`
+  	* sudo dnf install akmod-nvidia xorg-x11-drv-nvidia-cuda
+  	* (only in secure boot)
+  	`sudo kmodgenca -a
+sudo mokutil --import /etc/pki/akmods/certs/public_key.der`
+	(this depends on the nvidia version, refer to docs)
+	* sudo dnf install akmod-nvidia xorg-x11-drv-nvidia-cuda xorg-x11-drv-nvidia-power
+sudo systemctl enable nvidia-hibernate.service nvidia-suspend.service nvidia-resume.service
+	* sudo akmods --force
+	Now we have to fix nouveau taking control of GPU before nvidia module can
+	* sudo grubby --update-kernel=ALL --args="rd.driver.blacklist=nouveau,nova_core modprobe.blacklist=nouveau,nova_core"
+	* sudo tee /etc/dracut.conf.d/nvidia.conf << 'EOF'
+omit_drivers+=" nouveau nova_core "
+EOF
+	* sudo dracut --force
+	* sudo reboot
+
+> GNOME
+	* Sign in to google company account
+	* Blank screen delay -> 15 minutes
+	* automatic lock delay -> 30 seconds
+	* formats -> Nederland
+	* only let files, settings, boxes, calculator in search
+	* unpin all from dash
+	* pin files to dash
+	* ~/.local/share/applications/*wezterm*.desktop:
+		[Desktop Entry]
+Name=WezTerm
+Comment=Wez's Terminal Emulator
+Keywords=shell;prompt;command;commandline;cmd;
+Icon=org.wezfurlong.wezterm
+StartupWMClass=org.wezfurlong.wezterm
+TryExec=wezterm
+Exec=wezterm start --cwd .
+Type=Application
+Categories=System;TerminalEmulator;Utility;
+Terminal=false
+NoDisplay=true
+	
+	extensions (flatpaks)
+	* eyedropper
+	* binary
+	* extensions
+	* status-tray (https://github.com/keithvassallomt/status-tray)
+	* in extensions enable status-tray
+	* gnome-shell-extension
+	* gnome-tweaks
+	* flatpak install flathub com.mattjakeman.ExtensionManager -y
+	
+	in extensionmanager:
+		- isntall Stop Notification Focus Stealing
+		- install Vitals
+		- install Quake Terminal
+		- install 
+	
+	tweaks:
+	* windows > titlebar buttons > maximise, minimise enabled
+	* windows > click actions > disable attach modal dialogues
+	* startup applications > wezterm
+
+> Terminal
+	* download wezterm
+	* put the wezterm.lua in ~/.config/wezterm/wezterm.lua
+	* Gnome: get quake-terminal extension
+	* Gnome: install quake-extension system-wide:
+		- sudo cp -r ~/.local/share/gnome-shell/extensions/quake-terminal@diegodario88.github.io /usr/share/gnome-shell/extensions/
+		- sudo cp /usr/share/gnome-shell/extensions/quake-terminal@diegodario88.github.io/schemas/org.gnome.shell.extensions.quake-terminal.gschema.xml /usr/share/glib-2.0/schemas/
+		- sudo glib-compile-schemas /usr/share/glib-2.0/schemas/
+		- rm -rf ~/.local/share/gnome-shell/extensions/quake-terminal@diegodario88.github.io
+		- sudo chmod -R u=rwX,go=rX /usr/share/gnome-shell/extensions/quake-terminal@diegodario88.github.io
+		- sudo restorecon -Rv /usr/share/gnome-shell/extensions/quake-terminal@diegodario88.github.io
+		- sudo chmod -R u=rwX,go=rX /usr/share/gnome-shell/extensions/quake-terminal@diegodario88.github.io
+		- sudo chown -R $USER:$USER ~/.config/wezterm/
+		- chmod 644 ~/.config/wezterm/wezterm.lua
+		- sudo chmod -R a+rX /usr/share/gnome-shell/extensions/quake-terminal@diegodario88.github.io
+		- gnome-extensions enable quake-terminal@diegodario88.github.io
+	* nerdfont
+		- install all fonts in fonts/ directory
+	* starship.rs
+		- curl -sS https://starship.rs/install.sh | sh
+		- mkdir .config/starship
+		- move starship config.toml in there
+	* fish config:
+		- set STARSHIP_CONFIG ~/.config/starship/starship.toml
+		- eval "$(starship init bash)"
+		- starship init fish | source
+	* bash config:
+		- export STARSHIP_CONFIG=~/.config/starship/starship_pastel.toml
+		- eval "$(starship init bash)"
+	* sudo user config:
+		- bash
+		- use custom config (root/.config/starship.toml)
+
+> utilities:
+	- <utility> 	[replaces]	<terminal command>
+	- eza 		[ls | tree]		eza
+	- zoxide	[cd]			z
+	- ripgrep	[grep]			rg
+	- fd-find	[find]			fd
+	- sd		[sed | awk]		sd
+	- choose	[cut | awk]		choose
+	- difftastic	[diff]			difft
+	- dust		[du]			dust
+	- duf		[df]			duf
+	
+	
+	- procs		[ps]			procs
+	- btop		[top]			btop
+	- bottom	[htop]			btm
+	- gping		[ping]			gping
+	- trip		[traceroute | mtr]	trippy
+	- xh		[httpie]		xh
+	- atuin					atuin
+	- tealdeer	[man & tldr]		tealdeer
+	
+	
+	- fzf
+	sudo dnf copr enable atim/bottom
+	sudo dnf copr enable atim/choose
+	sudo dnf copr enable ducaale/xh 
+	sudo dnf copr enable atim/gping
+	sudo dnf install eza zoxide ripgrep fd-find difftastic du-dust duf procs btop bottom choose xh gping tealdeer atuin difftastic
+	cargo install sd
+	cargo install trippy --locked
+
+> fish
+	* set default shell to fish
+	* install fisher
+		- https://github.com/jorgebucaran/fisher
+		- curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher install jorgebucaran/fisher
+	* install carapace
+		- get binary from github release (or use nix pkgs)
+		- set -Ux CARAPACE_BRIDGES 'zsh,fish,bash,inshellisense'
+		- carapace _carapace | source
+	* install rustup
+		- dnf install rustup
+		- rustup-init
+	* install vivid
+		- cargo install vivid
+		- install custom theme (place theme in ~/.config/vivid/themes/soft-pastel.yml)
+		- in ~/.config/fish/config.fish:
+			* if command -q vivid
+    set -gx LS_COLORS (vivid generate soft-pastel)
+end
+	* fisher extensions:
+		- fisher install nickeb96/puffer-fish
+		- fisher install meaningful-ooo/sponge
+		- fisher install jorgebucaran/autopair.fish
+		- fisher install jorgebucaran/nvm.fish
+		- fisher install PatrickF1/fzf.fish
+		- fisher install paldepind/projectdo
+		- fisher install acomagu/fish-async-prompt
+		- fisher install gazorby/fish-abbreviation-tips
+		- fisher install jorgebucaran/replay.fish
+		
+		
+	* abbreviations:
+		abbr -a gs git status
+		abbr -a ga git add -p
+		abbr -a gc git commit
+		abbr -a gp git push
+		abbr -a gl git log --oneline
+		abbr -a gco git checkout -p
+		abbr -a gb git branch
+		abbr -a gd git diff
+		abbr -a ls 'eza --icons --group-directories-first'
+		abbr -a ll 'eza -la --icons --git --group-directories-first'
+		abbr -a lt 'eza --tree --level=2 --icons'
+		abbr -a cat bat
+		abbr -a grep rg
+		abbr -a find fd
+		abbr -a du dust
+		abbr -a df duf
+		abbr -a ps procs
+
+> git:
+	- create config file at `~/.config/git/config`
+	- set uname and email
+	
+	
+
+	
+> pager
+	- sudo dnf install meld git-delta bat ov	
+	- go install github.com/walles/moor/v2/cmd/moor@latest
+	- update ~.gitconfig
+	- mark pagers as safe in fish
+		# In ~/.config/fish/config.fish
+		set -gx PAGER ov
+		set -gx SYSTEMD_PAGER ov
+		set -gx SYSTEMD_PAGERSECURE true
+
+
+	#todo:  - nvim config
+	 	- fish abbr for missing programs
+	 	- add flags to abbreviations
+	 	- also add to bash -> agent use
+	 	- git
+	 	
