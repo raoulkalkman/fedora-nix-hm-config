@@ -1,0 +1,17 @@
+# Case-insensitive tab completion
+set completion-ignore-case On
+
+# Show matches immediately on first tab press
+set show-all-if-ambiguous On
+set show-all-if-unmodified On
+
+# Colorize file types in completions (uses LS_COLORS)
+set colored-stats On
+set colored-completion-prefix On
+
+# Append '/' to symlinked directories
+set mark-symlinked-directories On
+
+# History searching with Up / Down arrows
+"\e[A": history-search-backward
+"\e[B": history-search-forward

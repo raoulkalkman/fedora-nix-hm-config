@@ -1,0 +1,26 @@
+CompileFlags:
+  Remove: [-m*, -f*] # Remove gcc-specific flags
+  Add: [-std=c++17, -pedantic, -Wall, -Wextra]
+  BuiltinHeaders: QueryDriver
+
+Diagnostics:
+  UnusedIncludes: Strict
+  MissingIncludes: Strict
+  ClangTidy:
+    FastCheckFilter: Loose # Run all clang-tidy checks, even ones that are slow
+
+# clangd-22 only
+# Documentation:
+#   CommentFormat: Doxygen
+
+Completion:
+  ArgumentLists: FullPlaceholders
+  HeaderInsertion: IWYU
+  CodePatterns: All
+  MacroFilter: FuzzyMatch
+
+InlayHints:
+  BlockEnd: true
+
+Hover:
+  ShowAKA: true # Show desugared type names in hover tooltips
